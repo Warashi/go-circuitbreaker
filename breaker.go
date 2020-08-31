@@ -79,6 +79,9 @@ func (c *Counters) incrementFailures() {
 // StateChangeHook is a function which will be invoked when the state is changed.
 type StateChangeHook func(oldState, newState State)
 
+// CallHook is a function which will be invoked when Operation is succeeded or is failed.
+type CallHook func(cnt *Counters)
+
 // TripFunc is a function to determine if CircuitBreaker should open (trip) or
 // not. TripFunc is called when cb.Fail was called and the state was
 // StateClosed. If TripFunc returns true, the cb's state goes to StateOpen.
@@ -200,6 +203,12 @@ type Options struct {
 	// FailOnContextDeadline controls if CircuitBreaker mark an error when the
 	// passed context.Done() is context.DeadlineExceeded as a fail.
 	FailOnContextDeadline bool
+
+	// SuccessHook is a function which will be invoked when the Operation was succeeded
+	SuccessHook CallHook
+
+	// FailureHook is a function which will be invoked when the Operation was failed
+	FailureHook CallHook
 }
 
 // CircuitBreaker provides circuit breaker pattern.
@@ -212,6 +221,8 @@ type CircuitBreaker struct {
 	onStateChange         StateChangeHook
 	failOnContextCancel   bool
 	failOnContextDeadline bool
+	successHook           CallHook
+	failureHook           CallHook
 
 	mu    sync.RWMutex
 	state state
@@ -263,6 +274,8 @@ func New(opts *Options) *CircuitBreaker {
 		halfOpenMaxSuccesses:  halfOpenMaxSuccesses,
 		failOnContextCancel:   opts.FailOnContextCancel,
 		failOnContextDeadline: opts.FailOnContextDeadline,
+		successHook:           opts.SuccessHook,
+		failureHook:           opts.FailureHook,
 	}
 	cb.setState(&stateClosed{})
 	return cb
@@ -313,6 +326,9 @@ func (cb *CircuitBreaker) Success() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 	cb.cnt.incrementSuccesses()
+	if cb.successHook != nil {
+		cb.successHook(&cb.cnt)
+	}
 	cb.state.onSuccess(cb)
 }
 
@@ -321,6 +337,9 @@ func (cb *CircuitBreaker) Fail() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 	cb.cnt.incrementFailures()
+	if cb.failureHook != nil {
+		cb.failureHook(&cb.cnt)
+	}
 	cb.state.onFail(cb)
 }
 
